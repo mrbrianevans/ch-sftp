@@ -3,10 +3,9 @@ import os
 import duckdb
 from datetime import datetime
 import time
-import sys
 import re
 
-def crawl_sftp(host, port, username, key_path, base_path='/', db_path='sftp_catalogue.duckdb'):
+def crawl_sftp(host, port, username, key_path, base_path='/'):
     # Set up SFTP
     transport = paramiko.Transport((host, port))
     pkey = paramiko.RSAKey.from_private_key_file(key_path)
@@ -14,7 +13,21 @@ def crawl_sftp(host, port, username, key_path, base_path='/', db_path='sftp_cata
     sftp = paramiko.SFTPClient.from_transport(transport)
 
     # Set up DuckDB database (persist on disk)
-    conn = duckdb.connect(db_path)
+    conn = duckdb.connect(':memory:')
+    conn.execute(f"""
+INSTALL postgres;
+LOAD postgres;
+CREATE SECRET postgres_catalogue (
+    TYPE postgres,
+    HOST '{os.getenv('PGHOST')}',
+    PORT {os.getenv('PGPORT')},
+    DATABASE '{os.getenv('PGDATABASE')}',
+    USER '{os.getenv('PGUSER')}',
+    PASSWORD '{os.getenv('PGPASSWORD')}'
+);
+ATTACH '' AS catalogue (TYPE postgres, SECRET 'postgres_catalogue');
+USE catalogue.sftp;
+""")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS files (
             path TEXT PRIMARY KEY,
@@ -79,20 +92,17 @@ def crawl_sftp(host, port, username, key_path, base_path='/', db_path='sftp_cata
     sftp.close()
     transport.close()
     conn.close()
-    print(f"Saved DuckDB catalogue at {db_path}")
 
 if __name__ == "__main__":
     username = os.getenv('SFTP_USERNAME')
     key_path = os.getenv('SFTP_KEY')
-    db_path: str = sys.argv[1] if len(sys.argv) > 1 else 'sftp_catalogue.duckdb'
-    print(f"Crawling SFTP to {db_path}")
+    print(f"Crawling SFTP to postgres")
     print(f'Start time: {datetime.now()}')
     crawl_sftp(
         host='bulk-live.companieshouse.gov.uk',
         port=22,
         username=username,
         key_path=key_path,
-        base_path='/free',
-        db_path=db_path
+        base_path='/free'
     )
     print(f'Finish time: {datetime.now()}')
