@@ -43,3 +43,6 @@ select
     else null
   end as run_number
 from base b;
+
+grant select on sftp.enriched_files to "read-write";
+grant select on sftp.enriched_files to "read-only";

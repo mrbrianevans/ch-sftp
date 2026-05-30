@@ -9,4 +9,5 @@ dependencies = [
     "boto3-stubs~=1.43.18",
     "duckdb>=1.5.3",
     "paramiko>=5.0.0",
+    "zstandard>=0.25.0",
 ]

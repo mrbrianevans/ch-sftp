@@ -1,7 +1,7 @@
 import paramiko
 import os
 import duckdb
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 import re
 
@@ -52,7 +52,8 @@ USE catalogue.sftp;
         record = {
             "path": full_path,
             "size_bytes": size,
-            "last_modified": datetime.fromtimestamp(mtime).isoformat(),
+            # TODO: check the timezone that the server operates in. May be Europe/London?
+            "last_modified": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(),
         }
 
         # Insert into Postgres via DuckDB (ignore if already exists)
