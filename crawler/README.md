@@ -4,10 +4,10 @@
 Python script to crawl the SFTP server: `crawl_sftp.py`.
 
 ```bash
- uv run --env-file .env .\crawler\crawl_sftp.py test.db
+ uv run --env-file .env .\crawler\crawl_sftp.py test.duckdb
 ```
 
-It recursively crawls the SFTP server and stores a catalogue of the files in a JSON Lines file and an SQLite database.
+It recursively crawls the SFTP server and stores a catalogue of the files in a DuckDB database.
 
 ## Summary of files (August 2025)
 
