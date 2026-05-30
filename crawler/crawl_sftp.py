@@ -12,7 +12,7 @@ def crawl_sftp(host, port, username, key_path, base_path='/'):
     transport.connect(username=username, pkey=pkey)
     sftp = paramiko.SFTPClient.from_transport(transport)
 
-    # Set up DuckDB database (persist on disk)
+    # Use in-memory DuckDB + Postgres extension to write to the remote catalogue
     conn = duckdb.connect(':memory:')
     conn.execute(f"""
 INSTALL postgres;
@@ -59,7 +59,7 @@ USE catalogue.sftp;
             'last_modified': datetime.fromtimestamp(mtime).isoformat()
         }
 
-        # Insert into DuckDB (ignore if already exists)
+        # Insert into Postgres via DuckDB (ignore if already exists)
         conn.execute("""
             INSERT INTO files (path, size_bytes, last_modified)
             VALUES (?, ?, ?)

@@ -4,10 +4,12 @@
 Python script to crawl the SFTP server: `crawl_sftp.py`.
 
 ```bash
- uv run --env-file .env .\crawler\crawl_sftp.py test.duckdb
+ uv run --env-file .env python crawler/crawl_sftp.py
 ```
 
-It recursively crawls the SFTP server and stores a catalogue of the files in a DuckDB database.
+It recursively crawls the SFTP server and stores the file catalogue in Postgres.
+
+The script uses an **in-memory DuckDB** instance + DuckDB's Postgres extension to connect and write to a Postgres database (schema `sftp`, table `files`). No local database file is used or produced.
 
 ## Summary of files (August 2025)
 
