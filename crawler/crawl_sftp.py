@@ -31,13 +31,6 @@ CREATE SECRET postgres_catalogue (
 ATTACH '' AS catalogue (TYPE postgres, SECRET 'postgres_catalogue');
 USE catalogue.sftp;
 """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS files (
-            path TEXT PRIMARY KEY,
-            size_bytes BIGINT,
-            last_modified TEXT
-        )
-    """)
 
     def get_latest_date_from_db():
         # pick up from latest crawled directories

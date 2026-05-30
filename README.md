@@ -33,3 +33,23 @@ Configure these in your GitHub repository under **Settings → Secrets and varia
 The action will fail (intentionally) if the required secrets are missing.
 
 You can also trigger a manual run from the **Actions** tab → "Daily SFTP Catalogue Crawl" → "Run workflow".
+
+
+## Data file path structure
+
+Example file paths:
+
+```
+/free/prod215/2020/08/22/ext_rec_ind_7834
+/free/prod215/2026/03/31/rec_ind_9872.txt
+/free/prod215/2026/04/05/ext_rec_ind_9877.txt
+/free/prod216/2025/08/05/Prod216_4017_ew_1.dat
+/free/prod216/2025/08/05/Prod216_4017_ew_2.dat
+/free/prod223/2024/12/04/Prod223_3843.zip
+/free/prodSURRENDNAMES/2024/07/24/ProdSURRENDNAMES_3749.txt
+```
+
+The general pattern is `/free/{product code}/{year}/{month}/{day}/{Product Code}_{Run number}.{extension}`.
+
+The logical layers are:
+Product -> Date of production -> Files.
