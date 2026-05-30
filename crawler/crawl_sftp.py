@@ -1,44 +1,50 @@
 import paramiko
-import json
 import os
-import sqlite3
+import duckdb
 from datetime import datetime
 import time
-import sys
 import re
 
-def crawl_sftp(host, port, username, key_path, base_path='/', db_path='sftp_catalogue.db', jsonl_path='sftp_file_metadata_catalogue.jsonl'):
+def crawl_sftp(host, port, username, key_path, base_path='/'):
     # Set up SFTP
     transport = paramiko.Transport((host, port))
     pkey = paramiko.RSAKey.from_private_key_file(key_path)
     transport.connect(username=username, pkey=pkey)
     sftp = paramiko.SFTPClient.from_transport(transport)
 
-    # Set up SQLite database (persist on disk)
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
+    # Use in-memory DuckDB + Postgres extension to write to the remote catalogue
+    conn = duckdb.connect(':memory:')
+    conn.execute(f"""
+INSTALL postgres;
+LOAD postgres;
+CREATE SECRET postgres_catalogue (
+    TYPE postgres,
+    HOST '{os.getenv('PGHOST')}',
+    PORT {os.getenv('PGPORT')},
+    DATABASE '{os.getenv('PGDATABASE')}',
+    USER '{os.getenv('PGUSER')}',
+    PASSWORD '{os.getenv('PGPASSWORD')}'
+);
+ATTACH '' AS catalogue (TYPE postgres, SECRET 'postgres_catalogue');
+USE catalogue.sftp;
+""")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            path TEXT UNIQUE,
-            size_bytes INTEGER,
+            path TEXT PRIMARY KEY,
+            size_bytes BIGINT,
             last_modified TEXT
         )
     """)
-    conn.commit()
-
-    # Open JSONL file for appending
-    jsonl_file = open(jsonl_path, "a", encoding="utf-8")
 
     def get_latest_date_from_db():
         # pick up from latest crawled directories
         try:
-            cursor.execute("""SELECT SUBSTR(path, INSTR(path, 'prod'), INSTR(path, '/20')-INSTR(path, 'prod')) AS product,
-                                     MAX(SUBSTR(path, 0, INSTR(path, '/20') + 11)) AS latest
+            rows = conn.execute("""SELECT 
+                                     substring(path, position('prod' IN path), position('/20' IN path) - position('prod' IN path)) AS product,
+                                     MAX(substring(path, 1, position('/20' IN path) + 10)) AS latest
                               FROM files
                               WHERE path LIKE '/free/prod%/20%/%/%/%'
-                              GROUP BY 1;""")
-            rows = cursor.fetchall()
+                              GROUP BY 1;""").fetchall()
             return {row[0]: row[1] for row in rows}
         except Exception:
             return {}
@@ -53,16 +59,13 @@ def crawl_sftp(host, port, username, key_path, base_path='/', db_path='sftp_cata
             'last_modified': datetime.fromtimestamp(mtime).isoformat()
         }
 
-        # Insert into SQLite (ignore if already exists)
-        cursor.execute("""
-            INSERT OR IGNORE INTO files (path, size_bytes, last_modified)
+        # Insert into Postgres via DuckDB (ignore if already exists)
+        conn.execute("""
+            INSERT INTO files (path, size_bytes, last_modified)
             VALUES (?, ?, ?)
+            ON CONFLICT (path) DO NOTHING
         """, (record['path'], record['size_bytes'], record['last_modified']))
-        conn.commit()
-
-        # Append to JSONL
-        jsonl_file.write(json.dumps(record) + "\n")
-        jsonl_file.flush()  # ensures resilience in case of crash
+        conn.commit()  # ensure durability similar to previous flush
 
     def recurse(dir_path):
         for entry in sftp.listdir_attr(dir_path):
@@ -86,26 +89,20 @@ def crawl_sftp(host, port, username, key_path, base_path='/', db_path='sftp_cata
     recurse(base_path)
 
     # Clean up
-    jsonl_file.close()
     sftp.close()
     transport.close()
     conn.close()
-    print(f"Saved SQLite DB at {db_path} and JSONL at {jsonl_path}")
 
 if __name__ == "__main__":
     username = os.getenv('SFTP_USERNAME')
     key_path = os.getenv('SFTP_KEY')
-    db_path: str = sys.argv[1]
-    jsonl_path = db_path.replace('.db', '.jsonl')
-    print(f"Crawling SFTP to {db_path} and writing JSONL to {jsonl_path}")
+    print(f"Crawling SFTP to postgres")
     print(f'Start time: {datetime.now()}')
     crawl_sftp(
         host='bulk-live.companieshouse.gov.uk',
         port=22,
         username=username,
         key_path=key_path,
-        base_path='/free',
-        db_path=db_path,
-        jsonl_path=jsonl_path
+        base_path='/free'
     )
     print(f'Finish time: {datetime.now()}')

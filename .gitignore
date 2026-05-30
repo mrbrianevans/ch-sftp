@@ -1,0 +1,52 @@
+# Environment & secrets
+.env
+
+# SFTP / SSH private keys (never commit!)
+*id_rsa*
+*.pem
+*private*.key
+ssh_key*
+/tmp/sftp/
+
+# Python
+__pycache__/
+.venv/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Test / local catalogue outputs (keep only the committed sftp_catalogue.duckdb)
+test*.duckdb
+test*.jsonl
+test.db
+test.jsonl
+
+# Legacy local catalogue files (catalogue now lives in Postgres)
+sftp_catalogue.duckdb
+sftp_catalogue.jsonl
+*.duckdb
+*.jsonl
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

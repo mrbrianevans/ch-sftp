@@ -1,0 +1,61 @@
+name: SFTP Catalogue Crawl
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # increase to hourly once stable
+  workflow_dispatch:  # Manual trigger from Actions tab
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        branch: [master, dev]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install project dependencies
+        run: uv sync --frozen
+
+      - name: Prepare SFTP private key file
+        env:
+          SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
+        run: |
+          mkdir -p /tmp/sftp
+          KEYFILE="/tmp/sftp/id_rsa"
+          printf '%s\n' "$SFTP_PRIVATE_KEY" > "$KEYFILE"
+          chmod 600 "$KEYFILE"
+          echo "KEYFILE=$KEYFILE" >> $GITHUB_ENV
+
+      - name: Prepare SSH known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H bulk-live.companieshouse.gov.uk >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 600 ~/.ssh/known_hosts || true
+
+      - name: Run SFTP crawler
+        env:
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_KEY: ${{ env.KEYFILE }}
+
+          # Postgres connection (used by DuckDB's postgres extension)
+          PGHOST: ${{ secrets.PGHOST }}
+          PGPORT: ${{ secrets.PGPORT || '5432' }}
+          PGDATABASE: ${{ matrix.branch == 'master' && 'cc_prod' || 'cc_dev' }}
+          PGUSER: ${{ secrets.PGUSER }}
+          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+        run: uv run python crawler/crawl_sftp.py
+
+      - name: Clean up private key
+        if: always()
+        run: rm -f /tmp/sftp/id_rsa || true
