@@ -73,7 +73,7 @@ USE catalogue.sftp;
         nonlocal depth
         depth += 1
         for entry in sftp.listdir_attr(dir_path):
-            if entry.filename == "bulkimage" or depth > 1:
+            if entry.filename == "bulkimage" or depth > 10:
                 continue  # skip huge directory. TODO include this. check it works with resumable.
             full_path = dir_path + "/" + entry.filename
             if entry.longname.startswith("d"):  # Directory
