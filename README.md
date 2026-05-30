@@ -27,7 +27,6 @@ Configure these in your GitHub repository under **Settings → Secrets and varia
 | `SFTP_PRIVATE_KEY`    | **Full contents** of your RSA private key file (paste the entire `-----BEGIN RSA PRIVATE KEY----- ... -----END RSA PRIVATE KEY-----` block) |
 | `PGHOST`              | Postgres hostname                                                           |
 | `PGPORT`              | Postgres port (optional, defaults to 5432)                                  |
-| `PGDATABASE`          | Database name                                                               |
 | `PGUSER`              | Postgres user                                                               |
 | `PGPASSWORD`          | Postgres password                                                           |
 

@@ -2,30 +2,32 @@ name: SFTP Catalogue Crawl
 
 on:
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '0 4 * * *' # increase to hourly once stable
   workflow_dispatch:  # Manual trigger from Actions tab
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
+
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        branch: [master, dev]
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
 
       - name: Install project dependencies
         run: uv sync --frozen
 
-      - name: Prepare SFTP private key (from repo secret)
+      - name: Prepare SFTP private key file
         env:
           SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
         run: |
@@ -35,7 +37,7 @@ jobs:
           chmod 600 "$KEYFILE"
           echo "KEYFILE=$KEYFILE" >> $GITHUB_ENV
 
-      - name: Prepare SSH known_hosts for the SFTP server
+      - name: Prepare SSH known_hosts
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H bulk-live.companieshouse.gov.uk >> ~/.ssh/known_hosts 2>/dev/null || true
@@ -49,13 +51,11 @@ jobs:
           # Postgres connection (used by DuckDB's postgres extension)
           PGHOST: ${{ secrets.PGHOST }}
           PGPORT: ${{ secrets.PGPORT || '5432' }}
-          PGDATABASE: ${{ secrets.PGDATABASE }}
+          PGDATABASE: ${{ matrix.branch == 'master' && 'cc_prod' || 'cc_dev' }}
           PGUSER: ${{ secrets.PGUSER }}
           PGPASSWORD: ${{ secrets.PGPASSWORD }}
-        run: |
-          uv run python crawler/crawl_sftp.py
+        run: uv run python crawler/crawl_sftp.py
 
       - name: Clean up private key
         if: always()
-        run: |
-          rm -f /tmp/sftp/id_rsa || true
+        run: rm -f /tmp/sftp/id_rsa || true
