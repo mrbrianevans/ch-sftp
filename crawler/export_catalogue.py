@@ -38,7 +38,7 @@ def export_catalogue_to_s3(conn):
         # Export as a single JSON array using DuckDB (very efficient)
         conn.execute(f"""
             COPY (
-                SELECT path, size_bytes, to_iso8601(last_modified) as last_modified FROM files ORDER BY path
+                SELECT path, size_bytes, strftime(last_modified, '%xT%X') as last_modified FROM files ORDER BY path
             ) TO '{tmp_path}'
             (FORMAT JSON, COMPRESSION GZIP, ARRAY TRUE)
         """)
