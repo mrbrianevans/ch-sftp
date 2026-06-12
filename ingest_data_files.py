@@ -78,8 +78,8 @@ USE catalogue.sftp;
             size_bytes
         FROM enriched_files
         WHERE ingested_at IS NULL
-          AND (file_extension IS NULL OR file_extension != 'zip')
-        ORDER BY production_date DESC NULLS LAST, path
+          AND (file_extension IS NULL OR file_extension != 'zip') and size_bytes > 0
+        ORDER BY production_date DESC, size_bytes ASC NULLS LAST, path
         LIMIT 100
     """
     pending = conn.execute(query).fetchall()
@@ -138,6 +138,7 @@ USE catalogue.sftp;
                     ExtraArgs={
                         "ContentEncoding": "zstd",
                         "ContentType": "text/plain",
+                        "ContentDisposition": "attachment",
                         "Metadata": {
                             "original-sftp-path": path or "",
                             "product-code": product_code or "",
