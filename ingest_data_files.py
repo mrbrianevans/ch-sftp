@@ -1,5 +1,7 @@
+import argparse
 import os
 from datetime import datetime
+from time import sleep
 
 import duckdb
 import paramiko
@@ -37,10 +39,12 @@ def get_s3_key(sftp_path: str) -> str:
     return clean
 
 
-def ingest_latest_data_files():
-    """Download the 100 newest un-ingested data files (non-zip), zstd compress them
+def ingest_latest_data_files(limit: int = 100):
+    """Download the newest un-ingested data files (non-zip), zstd compress them
     in a streaming fashion, upload to S3, and mark them ingested in the catalogue.
     """
+    if limit < 1:
+        limit = 100
     # Connect to Postgres using in-memory DuckDB + postgres extension (same pattern as crawl_sftp.py)
     conn = duckdb.connect(":memory:")
     pg_host = os.getenv("PGHOST")
@@ -67,7 +71,7 @@ USE catalogue.sftp;
     # Query per the spec in this file's header comments.
     # Uses the enriched_files view (product_code, production_date, file_extension, etc.)
     print("Querying enriched_files view for files pending ingest...")
-    query = """
+    query = f"""
         SELECT
             path,
             product_code,
@@ -80,7 +84,7 @@ USE catalogue.sftp;
         WHERE ingested_at IS NULL
           AND (file_extension IS NULL OR file_extension != 'zip') and size_bytes > 0
         ORDER BY production_date DESC, size_bytes ASC NULLS LAST, path
-        LIMIT 100
+        LIMIT {limit}
     """
     pending = conn.execute(query).fetchall()
 
@@ -97,7 +101,9 @@ USE catalogue.sftp;
     username = os.getenv("SFTP_USERNAME")
     key_path = os.getenv("SFTP_KEY")
     if not username or not key_path:
-        raise RuntimeError("SFTP_USERNAME and SFTP_KEY environment variables are required")
+        raise RuntimeError(
+            "SFTP_USERNAME and SFTP_KEY environment variables are required"
+        )
 
     print(f"Connecting to SFTP {sftp_host}...")
     transport = paramiko.Transport((sftp_host, sftp_port))
@@ -114,12 +120,13 @@ USE catalogue.sftp;
     # Process each file: streaming download -> zstd compress -> streaming S3 upload
     processed = 0
     for idx, row in enumerate(pending, 1):
+        start = datetime.now()
         path, product_code, prod_date, filename, file_ext, run_num, size_bytes = row
         s3_key = get_s3_key(path)
 
         print(
             f"[{idx}/{len(pending)}] {path} "
-            f"(product={product_code}, date={prod_date}, run={run_num}, size={size_bytes})"
+            f"(product={product_code}, date={prod_date}, run={run_num}, size={size_bytes} bytes)"
         )
         print(f"    -> s3://{bucket}/{s3_key}")
 
@@ -149,7 +156,11 @@ USE catalogue.sftp;
                     },
                 )
 
-            print("    ✓ streamed + uploaded to S3")
+            elapsed = (datetime.now() - start).total_seconds()
+            mb_per_sec = (size_bytes / (1024 * 1024) / elapsed) if elapsed > 0 else 0
+            print(
+                f"    ✓ streamed + uploaded to S3 (took {elapsed:.2f}s, {mb_per_sec:.2f} MB/s)"
+            )
 
             # Mark as ingested only after successful upload (idempotent, resumable)
             conn.execute(
@@ -159,6 +170,7 @@ USE catalogue.sftp;
             conn.commit()
             processed += 1
             print("    ✓ updated ingested_at in Postgres")
+            sleep(2)  # pause between files
 
         except Exception as e:
             print(f"    ✗ FAILED: {e}")
@@ -174,11 +186,20 @@ USE catalogue.sftp;
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "limit",
+        nargs="?",
+        type=int,
+        default=100,
+        help="max files to ingest (default: 100)",
+    )
+    args = parser.parse_args()
+
     print(f"=== Companies House SFTP data ingest started at {datetime.now()} ===")
     try:
-        ingest_latest_data_files()
+        ingest_latest_data_files(limit=args.limit)
     except Exception as e:
         print(f"FATAL: {e}")
         raise
     print(f"=== Finished at {datetime.now()} ===")
-

@@ -18,7 +18,9 @@ def get_s3_client():
         endpoint_url=endpoint,
     )
 
+
 # TODO: test whether its necessary to set the custom content-encoding header, or if the cloudflare proxy would automate it if i just upload a raw json file.
+
 
 def export_catalogue_to_s3(conn):
     """Export the files table to a gzipped JSON array and upload to S3 with Content-Encoding: gzip."""
