@@ -19,9 +19,6 @@ def get_s3_client():
     )
 
 
-# TODO: test whether its necessary to set the custom content-encoding header, or if the cloudflare proxy would automate it if i just upload a raw json file.
-
-
 def export_catalogue_to_s3(conn):
     """Export the files table to a gzipped JSON array and upload to S3 with Content-Encoding: gzip."""
     bucket = os.getenv("S3_BUCKET")
@@ -29,20 +26,20 @@ def export_catalogue_to_s3(conn):
         print("S3_BUCKET not set — skipping JSON export to S3")
         return
 
-    key = "all-files.json.gz"
+    key = "all-files.json"
     s3 = get_s3_client()
 
     # Use a temporary file for the gzipped export
-    with tempfile.NamedTemporaryFile(suffix=".json.gz", delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".json.zst", delete=False) as tmp:
         tmp_path = tmp.name
 
     try:
         # Export as a single JSON array using DuckDB (very efficient)
         conn.execute(f"""
             COPY (
-                SELECT path, size_bytes, strftime(last_modified, '%xT%X') as last_modified FROM files ORDER BY path
+                SELECT path, size_bytes, strftime(last_modified, '%xT%X') as last_modified, ingested_at is not null as is_ingested FROM files ORDER BY path
             ) TO '{tmp_path}'
-            (FORMAT JSON, COMPRESSION GZIP, ARRAY TRUE)
+            (FORMAT JSON, COMPRESSION ZSTD, ARRAY TRUE)
         """)
 
         # Upload with the critical headers for frontend serving
@@ -51,13 +48,13 @@ def export_catalogue_to_s3(conn):
             bucket,
             key,
             ExtraArgs={
-                "ContentEncoding": "gzip",
+                "ContentEncoding": "zstd",
                 "ContentType": "application/json",
                 "CacheControl": "public, max-age=3600",
             },
         )
         print(
-            f"✓ Exported and uploaded catalogue to s3://{bucket}/{key} (Content-Encoding: gzip)"
+            f"✓ Exported and uploaded catalogue to s3://{bucket}/{key} (Content-Encoding: zstd)"
         )
 
     except Exception as e:
