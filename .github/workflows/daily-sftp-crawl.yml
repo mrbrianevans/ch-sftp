@@ -82,7 +82,8 @@ jobs:
           S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
           S3_REGION: ${{ secrets.S3_REGION }}
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
-        run: uv run python ingest_data_files.py 50
+          PYTHONUNBUFFERED: 1
+        run: uv run python -u ingest_data_files.py 50
         timeout-minutes: 60
 
       - name: Clean up private key
