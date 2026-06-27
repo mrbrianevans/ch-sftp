@@ -135,7 +135,7 @@ USE catalogue.sftp;
             with sftp.open(path, "rb") as remote_file:
                 # High compression level (19) — prioritizes smallest possible file size
                 # over compression speed. Suitable for archival bulk data.
-                compressor = zstd.ZstdCompressor(level=19)
+                compressor = zstd.ZstdCompressor(level=19) # TODO: test compression level for optimal
                 compressed_stream = compressor.stream_reader(remote_file)
 
                 s3.upload_fileobj(
@@ -174,6 +174,7 @@ USE catalogue.sftp;
 
         except Exception as e:
             print(f"    ✗ FAILED: {e}")
+            sleep(200)  # pause longer on failure
             # Leave ingested_at NULL so it will be retried on next run
             continue
 
