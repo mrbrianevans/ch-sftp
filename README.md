@@ -53,3 +53,32 @@ The general pattern is `/free/{product code}/{year}/{month}/{day}/{Product Code}
 
 The logical layers are:
 Product -> Date of production -> Files.
+
+## Zstd compression
+
+To minimise storage costs in the storage bucket, files are compressed with Zstd before being uploaded.
+Cloudflare decompresses them and optionally recompresses them when serving to clients, through the use of Encoding headers.
+Uploading it with `Content-Encoding` set tells Cloudflare to decompress it when serving.
+Clients can then set their own `Accept-Encoding` on the request and Cloudflare will honour it.
+
+### Compression level
+I tried a few compression levels on a representative sample of data.
+
+Decompression speed is much the same across all levels of compression, so this shouldn't affect download speed for users.
+
+Testing on Prod195_4252_sc.dat (418.94 MB) with `test_compression_levels.py`.
+
+**Updated Zstd Compression Test Results** (Original: 418.94 MB)
+
+| Level | Compressed   | Ratio   | Compress Time | Effective MB/s |
+|-------|--------------|---------|---------------|----------------|
+| -4    | 120.67 MB    | 28.8%   | 0.842 s       | 498            |
+| 1     | 80.45 MB     | 19.2%   | 1.016 s       | 412            |
+| 3     | 74.23 MB     | 17.7%   | 1.439 s       | 291            |
+| 8     | 63.16 MB     | 15.1%   | 6.338 s       | 66             |
+| 9     | 61.55 MB     | 14.7%   | 6.583 s       | 64             |
+| 13    | 60.02 MB     | 14.3%   | 27.785 s      | 15.1           |
+| 15    | 58.78 MB     | 14.0%   | 60.834 s      | 6.9            |
+| 18    | 54.03 MB     | 12.9%   | 142.124 s     | 2.95           |
+| 19    | 52.55 MB     | 12.5%   | 301.486 s     | 1.39           |
+
