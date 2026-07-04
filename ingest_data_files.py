@@ -1,5 +1,7 @@
 import argparse
 import os
+import tempfile
+import time
 from datetime import datetime
 from time import sleep
 
@@ -40,8 +42,11 @@ def get_s3_key(sftp_path: str) -> str:
 
 
 def ingest_latest_data_files(limit: int = 100):
-    """Download the newest un-ingested data files (non-zip), zstd compress them
-    in a streaming fashion, upload to S3, and mark them ingested in the catalogue.
+    """Download the newest un-ingested data files (non-zip), upload to S3, and mark
+    them ingested in the catalogue.
+
+    Each file is downloaded from SFTP to a local temp file first (fast bulk transfer),
+    then compressed and uploaded in a streaming pipeline (local read -> zstd -> S3).
     """
     if limit < 1:
         limit = 100
@@ -117,10 +122,9 @@ USE catalogue.sftp;
     if not bucket:
         raise RuntimeError("S3_BUCKET environment variable is required for data ingest")
 
-    # Process each file: streaming download -> zstd compress -> streaming S3 upload
+    # Process each file: bulk SFTP download -> streaming zstd compress -> S3 upload
     processed = 0
     for idx, row in enumerate(pending, 1):
-        start = datetime.now()
         path, product_code, prod_date, filename, file_ext, run_num, size_bytes = row
         s3_key = get_s3_key(path)
 
@@ -131,35 +135,55 @@ USE catalogue.sftp;
         print(f"    -> s3://{bucket}/{s3_key}")
 
         try:
-            # paramiko SFTPFile acts as a binary reader; zstd stream_reader pulls on demand
-            with sftp.open(path, "rb") as remote_file:
-                # High compression level. prioritise small file size over compression speed.
-                compressor = zstd.ZstdCompressor(level=15, threads=-1)
-                compressed_stream = compressor.stream_reader(remote_file)
+            with tempfile.TemporaryDirectory(prefix="ingest_") as tmp_dir:
+                local_path = os.path.join(tmp_dir, "download")
 
-                s3.upload_fileobj(
-                    compressed_stream,
-                    bucket,
-                    s3_key,
-                    ExtraArgs={
-                        "ContentEncoding": "zstd",
-                        "ContentType": "text/plain",
-                        "ContentDisposition": "attachment",
-                        "Metadata": {
-                            "original-sftp-path": path or "",
-                            "product-code": product_code or "",
-                            "run-number": str(run_num or ""),
-                            "original-size-bytes": str(size_bytes or ""),
-                            "production-date": str(prod_date or ""),
-                        },
-                    },
+                download_start = time.perf_counter()
+                sftp.get(path, local_path)
+                download_elapsed = time.perf_counter() - download_start
+                download_mbps = (
+                    size_bytes / (1024 * 1024) / download_elapsed
+                    if download_elapsed > 0
+                    else 0
+                )
+                print(
+                    f"    ✓ downloaded from SFTP "
+                    f"(took {download_elapsed:.2f}s, {download_mbps:.2f} MB/s)"
                 )
 
-            elapsed = (datetime.now() - start).total_seconds()
-            mb_per_sec = (size_bytes / (1024 * 1024) / elapsed) if elapsed > 0 else 0
-            print(
-                f"    ✓ streamed + uploaded to S3 (took {elapsed:.2f}s, {mb_per_sec:.2f} MB/s)"
-            )
+                pipeline_start = time.perf_counter()
+                with open(local_path, "rb") as local_file:
+                    # High compression level. prioritise small file size over compression speed.
+                    compressor = zstd.ZstdCompressor(level=15, threads=-1)
+                    compressed_stream = compressor.stream_reader(local_file)
+
+                    s3.upload_fileobj(
+                        compressed_stream,
+                        bucket,
+                        s3_key,
+                        ExtraArgs={
+                            "ContentEncoding": "zstd",
+                            "ContentType": "text/plain",
+                            "ContentDisposition": "attachment",
+                            "Metadata": {
+                                "original-sftp-path": path or "",
+                                "product-code": product_code or "",
+                                "run-number": str(run_num or ""),
+                                "original-size-bytes": str(size_bytes or ""),
+                                "production-date": str(prod_date or ""),
+                            },
+                        },
+                    )
+                pipeline_elapsed = time.perf_counter() - pipeline_start
+                pipeline_mbps = (
+                    size_bytes / (1024 * 1024) / pipeline_elapsed
+                    if pipeline_elapsed > 0
+                    else 0
+                )
+                print(
+                    f"    ✓ compressed + uploaded to S3 "
+                    f"(took {pipeline_elapsed:.2f}s, {pipeline_mbps:.2f} MB/s)"
+                )
 
             # Mark as ingested only after successful upload (idempotent, resumable)
             conn.execute(

@@ -82,3 +82,10 @@ Testing on Prod195_4252_sc.dat (418.94 MB) with `test_compression_levels.py`.
 | 18    | 54.03 MB     | 12.9%   | 142.124 s     | 2.95           |
 | 19    | 52.55 MB     | 12.5%   | 301.486 s     | 1.39           |
 
+### Streaming vs sequential
+
+Initially I was fully streaming from SFTP -> Compression -> S3 Upload, but from benchmarking found it was quicker to do the download from SFTP using `.get` without any blocking pipeline, and then do the compression and upload afterward.
+
+When running locally on my laptop this was a 10x increase in throughput from <0.5MB/s to 5MB/s.
+
+Benchmarks in `benchmark/benchmark_ingest.py` and `benchmark/benchmark_ingest_streaming.py`.

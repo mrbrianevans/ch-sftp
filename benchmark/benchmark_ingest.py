@@ -34,7 +34,7 @@ def get_s3_key(sftp_path: str) -> str:
     """Return an S3 key that mirrors the SFTP path."""
     if not sftp_path:
         return "unknown"
-    return sftp_path.lstrip("/")
+    return 'custom/'+sftp_path.lstrip("/")
 
 
 def connect_sftp():
