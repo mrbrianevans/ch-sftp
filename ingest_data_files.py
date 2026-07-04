@@ -134,7 +134,7 @@ USE catalogue.sftp;
             # paramiko SFTPFile acts as a binary reader; zstd stream_reader pulls on demand
             with sftp.open(path, "rb") as remote_file:
                 # High compression level. prioritise small file size over compression speed.
-                compressor = zstd.ZstdCompressor(level=15)
+                compressor = zstd.ZstdCompressor(level=15, threads=-1)
                 compressed_stream = compressor.stream_reader(remote_file)
 
                 s3.upload_fileobj(
