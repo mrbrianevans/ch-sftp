@@ -161,7 +161,7 @@ USE catalogue.sftp;
                 pipeline_start = time.perf_counter()
                 with open(local_path, "rb") as local_file:
                     # High compression level. prioritise small file size over compression speed.
-                    compressor = zstd.ZstdCompressor(level=15, threads=-1)
+                    compressor = zstd.ZstdCompressor(level=9, threads=-1)
                     compressed_stream = compressor.stream_reader(local_file)
 
                     s3.upload_fileobj(
@@ -202,7 +202,6 @@ USE catalogue.sftp;
             conn.commit()
             processed += 1
             print("    ✓ updated ingested_at in Postgres")
-            sleep(2)  # pause between files
 
         except Exception as e:
             print(f"    ✗ FAILED: {e}")
