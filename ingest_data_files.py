@@ -1,14 +1,19 @@
 import argparse
 import os
+import shutil
 import tempfile
 import time
 from datetime import datetime
+from pathlib import Path
 from time import sleep
 
 import duckdb
 import paramiko
 import boto3
 import zstandard as zstd
+
+REPO_ROOT = Path(__file__).resolve().parent
+INGEST_TEMP_DIR = REPO_ROOT / "temp"
 
 
 def get_s3_client():
@@ -135,11 +140,13 @@ USE catalogue.sftp;
         print(f"    -> s3://{bucket}/{s3_key}")
 
         try:
-            with tempfile.TemporaryDirectory(prefix="ingest_") as tmp_dir:
-                local_path = os.path.join(tmp_dir, "download")
+            INGEST_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+            file_tmp_dir = tempfile.mkdtemp(prefix="ingest_", dir=INGEST_TEMP_DIR)
+            try:
+                local_path = os.path.join(file_tmp_dir, "download")
 
                 download_start = time.perf_counter()
-                sftp.get(path, local_path)
+                sftp.get(path, local_path, max_concurrent_prefetch_requests=64)
                 download_elapsed = time.perf_counter() - download_start
                 download_mbps = (
                     size_bytes / (1024 * 1024) / download_elapsed
@@ -184,6 +191,8 @@ USE catalogue.sftp;
                     f"    ✓ compressed + uploaded to S3 "
                     f"(took {pipeline_elapsed:.2f}s, {pipeline_mbps:.2f} MB/s)"
                 )
+            finally:
+                shutil.rmtree(file_tmp_dir, ignore_errors=True)
 
             # Mark as ingested only after successful upload (idempotent, resumable)
             conn.execute(

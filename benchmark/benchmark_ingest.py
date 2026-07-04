@@ -5,6 +5,7 @@ Each phase runs sequentially (no streaming) so you can see where time is spent.
 
 import argparse
 import os
+import shutil
 import tempfile
 import time
 from datetime import datetime
@@ -17,6 +18,9 @@ import zstandard as zstd
 SFTP_HOST = "bulk-live.companieshouse.gov.uk"
 SFTP_PORT = 22
 ZSTD_LEVEL = 15
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+BENCH_TEMP_DIR = REPO_ROOT / "temp"
 
 
 def get_s3_client():
@@ -86,15 +90,17 @@ def benchmark_file(sftp_path: str, keep_local: bool = False) -> None:
         print(f"S3 target:   s3://{bucket}/{s3_key}")
         print()
 
-        with tempfile.TemporaryDirectory(prefix="bench_ingest_") as tmp_dir:
-            tmp = Path(tmp_dir)
+        BENCH_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+        file_tmp_dir = tempfile.mkdtemp(prefix="bench_ingest_", dir=BENCH_TEMP_DIR)
+        try:
+            tmp = Path(file_tmp_dir)
             local_raw = tmp / "downloaded.dat"
             local_compressed = tmp / "compressed.zst"
 
             # Step 1: SFTP download
             print("Step 1: SFTP download")
             download_start = time.perf_counter()
-            sftp.get(sftp_path, str(local_raw))
+            sftp.get(sftp_path, str(local_raw), max_concurrent_prefetch_requests=64)
             download_elapsed = time.perf_counter() - download_start
             local_size = local_raw.stat().st_size
             if local_size != original_size:
@@ -185,6 +191,8 @@ def benchmark_file(sftp_path: str, keep_local: bool = False) -> None:
                 f"Bottleneck: {bottleneck[0]} "
                 f"({bottleneck[1]:.2f}s, {bottleneck[1] / total_elapsed * 100:.1f}% of total)"
             )
+        finally:
+            shutil.rmtree(file_tmp_dir, ignore_errors=True)
 
     finally:
         sftp.close()
