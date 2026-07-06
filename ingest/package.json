@@ -1,0 +1,16 @@
+{
+  "name": "ingest",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.4-r.1",
+    "ssh2-sftp-client": "^12.1.1"
+  }
+}
