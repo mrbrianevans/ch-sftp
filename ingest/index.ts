@@ -233,6 +233,8 @@ async function ingestLatestDataFiles(
     const bucket = requireEnv("S3_BUCKET");
 
     let processed = 0;
+    let consecutiveFailures = 0;
+    const maxConsecutiveFailures = 5;
 
     try {
       for (const [index, file] of pending.entries()) {
@@ -257,9 +259,16 @@ async function ingestLatestDataFiles(
           await compressAndUpload(s3, bucket, file, downloadPath);
           await markIngested(connection, file.path);
           processed += 1;
+          consecutiveFailures = 0;
           console.log("    ✓ updated ingested_at in Postgres");
         } catch (error) {
+          consecutiveFailures += 1;
           console.log(`    ✗ FAILED: ${error}`);
+          if (consecutiveFailures > maxConsecutiveFailures) {
+            throw new Error(
+              `Stopping ingest after ${consecutiveFailures} consecutive failures (limit: ${maxConsecutiveFailures})`,
+            );
+          }
           await Bun.sleep(200_000);
         } finally {
           await rm(fileTmpDir, { recursive: true, force: true });
