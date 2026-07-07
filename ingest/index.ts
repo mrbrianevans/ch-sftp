@@ -1,11 +1,12 @@
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import {mkdtemp, mkdir, rm, stat} from "node:fs/promises";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import zlib from "node:zlib";
 
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import SftpClient from "ssh2-sftp-client";
 
@@ -14,6 +15,7 @@ const INGEST_TEMP_DIR = join(REPO_ROOT, "temp");
 const SFTP_HOST = "bulk-live.companieshouse.gov.uk";
 const SFTP_PORT = 22;
 const SFTP_RECONNECT_AFTER_MS = 10 * 60 * 1000;
+const MULTIPART_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024;
 const ZSTD_LEVEL = 9;
 
 function createZstdCompressor() {
@@ -202,24 +204,42 @@ async function compressAndUpload(
     `    ✓ compressed to disk (took ${pipelineElapsed.toFixed(2)}s, ${mbPerSec(file.sizeBytes, pipelineElapsed).toFixed(2)} MB/s)`,
   );
 
+  const uploadParams = {
+    Bucket: bucket,
+    Key: s3Key,
+    ContentEncoding: "zstd",
+    ContentType: "text/plain",
+    ContentDisposition: "attachment",
+    Metadata: {
+      "original-sftp-path": file.path,
+      "product-code": file.productCode ?? "",
+      "run-number": String(file.runNumber ?? ""),
+      "original-size-bytes": String(file.sizeBytes),
+      "production-date": file.productionDate ?? "",
+    },
+  };
+
+  const compressedSize = (await stat(compressedPath)).size;
   const uploadStart = performance.now();
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: s3Key,
-      Body: await Bun.file(compressedPath).bytes(),
-      ContentEncoding: "zstd",
-      ContentType: "text/plain",
-      ContentDisposition: "attachment",
-      Metadata: {
-        "original-sftp-path": file.path,
-        "product-code": file.productCode ?? "",
-        "run-number": String(file.runNumber ?? ""),
-        "original-size-bytes": String(file.sizeBytes),
-        "production-date": file.productionDate ?? "",
+  if (compressedSize >= MULTIPART_UPLOAD_THRESHOLD_BYTES) {
+    await new Upload({
+      client: s3,
+      params: {
+        ...uploadParams,
+        Body: createReadStream(compressedPath),
       },
-    }),
-  );
+    }).done();
+    console.log(
+      `    ✓ uploaded to S3 via multipart (${(compressedSize / (1024 * 1024)).toFixed(2)} MB compressed)`,
+    );
+  } else {
+    await s3.send(
+      new PutObjectCommand({
+        ...uploadParams,
+        Body: await Bun.file(compressedPath).bytes(),
+      }),
+    );
+  }
   const uploadElapsed = (performance.now() - uploadStart) / 1000;
   console.log(
     `    ✓ uploaded to S3 (took ${uploadElapsed.toFixed(2)}s, ${mbPerSec(file.sizeBytes, pipelineElapsed + uploadElapsed).toFixed(2)} MB/s end-to-end)`,
