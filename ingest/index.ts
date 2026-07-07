@@ -13,6 +13,7 @@ const REPO_ROOT = join(import.meta.dir, "..");
 const INGEST_TEMP_DIR = join(REPO_ROOT, "temp");
 const SFTP_HOST = "bulk-live.companieshouse.gov.uk";
 const SFTP_PORT = 22;
+const SFTP_RECONNECT_AFTER_MS = 10 * 60 * 1000;
 const ZSTD_LEVEL = 9;
 
 function createZstdCompressor() {
@@ -140,8 +141,38 @@ async function connectSftp(): Promise<SftpClient> {
     privateKey: await Bun.file(keyPath).text(),
     keepaliveInterval: 15_000,
   });
+  console.log("    ✓ connected to SFTP");
 
   return sftp;
+}
+
+async function disconnectSftp(sftp: SftpClient): Promise<void> {
+  try {
+    await sftp.end();
+  } catch {
+    // Connection may already be closed after a server-side drop.
+  }
+}
+
+async function reconnectSftp(sftp: SftpClient): Promise<SftpClient> {
+  await disconnectSftp(sftp);
+  return connectSftp();
+}
+
+async function ensureFreshSftpConnection(
+  sftp: SftpClient,
+  connectedAt: number,
+): Promise<{ sftp: SftpClient; connectedAt: number }> {
+  const elapsedMs = performance.now() - connectedAt;
+  if (elapsedMs < SFTP_RECONNECT_AFTER_MS) {
+    return { sftp, connectedAt };
+  }
+
+  console.log(
+    `    SFTP connection is ${(elapsedMs / 60_000).toFixed(1)} min old, reconnecting before download...`,
+  );
+  const freshSftp = await reconnectSftp(sftp);
+  return { sftp: freshSftp, connectedAt: performance.now() };
 }
 
 function mbPerSec(byteCount: number, elapsedSeconds: number): number {
@@ -228,7 +259,8 @@ async function ingestLatestDataFiles(
       `Found ${pending.length} file(s) to ingest (newest production_date first).`,
     );
 
-    const sftp = await connectSftp();
+    let sftp = await connectSftp();
+    let sftpConnectedAt = performance.now();
     const s3 = getS3Client();
     const bucket = requireEnv("S3_BUCKET");
 
@@ -249,6 +281,9 @@ async function ingestLatestDataFiles(
         const downloadPath = join(fileTmpDir, "download");
 
         try {
+          ({ sftp, connectedAt: sftpConnectedAt } =
+            await ensureFreshSftpConnection(sftp, sftpConnectedAt));
+
           const downloadStart = performance.now();
           await sftp.fastGet(file.path, downloadPath, { concurrency: 64 });
           const downloadElapsed = (performance.now() - downloadStart) / 1000;
@@ -270,12 +305,19 @@ async function ingestLatestDataFiles(
             );
           }
           await Bun.sleep(200_000);
+          try {
+            sftp = await reconnectSftp(sftp);
+            sftpConnectedAt = performance.now();
+            console.log("    ✓ reconnected to SFTP after failure");
+          } catch (reconnectError) {
+            console.log(`    ✗ SFTP reconnect failed: ${reconnectError}`);
+          }
         } finally {
           await rm(fileTmpDir, { recursive: true, force: true });
         }
       }
     } finally {
-      await sftp.end();
+      await disconnectSftp(sftp);
     }
 
     console.log(
