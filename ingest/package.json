@@ -1,0 +1,23 @@
+{
+  "name": "ingest",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "scripts": {
+    "bench:sequential": "bun run benchmark/benchmark_ingest_sequential.ts",
+    "bench:streaming": "bun run benchmark/benchmark_ingest_streaming.ts",
+    "bench:sftp-get": "bun run benchmark/benchmark_ingest_sftp_get.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1079.0",
+    "@aws-sdk/lib-storage": "^3.1079.0",
+    "@duckdb/node-api": "^1.5.4-r.1",
+    "ssh2-sftp-client": "^12.1.1"
+  }
+}

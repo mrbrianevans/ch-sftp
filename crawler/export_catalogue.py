@@ -30,7 +30,7 @@ def export_catalogue_to_s3(conn):
     s3 = get_s3_client()
 
     # Use a temporary file for the gzipped export
-    with tempfile.NamedTemporaryFile(suffix=".json.zst", delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
         tmp_path = tmp.name
 
     try:
@@ -39,7 +39,7 @@ def export_catalogue_to_s3(conn):
             COPY (
                 SELECT path, size_bytes, strftime(last_modified, '%xT%X') as last_modified, ingested_at is not null as is_ingested FROM files ORDER BY path
             ) TO '{tmp_path}'
-            (FORMAT JSON, COMPRESSION ZSTD, ARRAY TRUE)
+            (FORMAT JSON, ARRAY TRUE)
         """)
 
         # Upload with the critical headers for frontend serving
@@ -48,13 +48,15 @@ def export_catalogue_to_s3(conn):
             bucket,
             key,
             ExtraArgs={
-                "ContentEncoding": "zstd",
                 "ContentType": "application/json",
-                "CacheControl": "public, max-age=3600",
+                "CacheControl": (
+                    "public, max-age=180, must-revalidate, "
+                    "s-maxage=10800, stale-while-revalidate=86400"
+                )
             },
         )
         print(
-            f"✓ Exported and uploaded catalogue to s3://{bucket}/{key} (Content-Encoding: zstd)"
+            f"✓ Exported and uploaded catalogue to s3://{bucket}/{key}"
         )
 
     except Exception as e:

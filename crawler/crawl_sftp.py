@@ -67,14 +67,11 @@ USE catalogue.sftp;
         )
         conn.commit()  # ensure durability
 
-    depth = 0
-
-    def recurse(dir_path):
-        nonlocal depth
-        depth += 1
+    def recurse(dir_path, depth):
+        print(f"[{depth} depth] Listing {dir_path}")
         for entry in sftp.listdir_attr(dir_path):
             if entry.filename == "bulkimage":
-                continue  # skip huge directory. TODO include this. check it works with resumable.
+                continue  # skip huge directory. these are images, not structured data.
             full_path = dir_path + "/" + entry.filename
             if entry.longname.startswith("d"):  # Directory
                 if full_path.startswith("/free/prod"):
@@ -82,17 +79,17 @@ USE catalogue.sftp;
                     prod_code = match.group(1) if match else None
                     latest = latest_crawled_dates.get(prod_code, "")
                     if prod_code and latest and full_path < latest[0 : len(full_path)]:
-                        print(
-                            f"Skipping {full_path} as it is older than latest crawled date {latest}"
-                        )
+                        # print(
+                        #     f"Skipping {full_path} as it is older than latest crawled date {latest}"
+                        # )
                         continue
-                recurse(full_path)
+                recurse(full_path, depth+1)
             else:  # File
-                print("Found path", full_path, entry.st_size)
+                # print("Found path", full_path, entry.st_size)
                 save_file_metadata(full_path, entry.st_size, entry.st_mtime)
-        time.sleep(1)
+        time.sleep(0.2)
 
-    recurse(base_path)
+    recurse(base_path, 0)
 
     # Export catalogue to S3 as gzipped JSON (for frontend consumption)
     export_catalogue_to_s3(conn)
