@@ -2,8 +2,8 @@ name: SFTP Catalogue Crawl
 
 on:
   schedule:
-    - cron: '0 4 * * *' # increase to hourly once stable
-  workflow_dispatch:  # Manual trigger from Actions tab
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   crawl:
@@ -13,7 +13,7 @@ jobs:
       max-parallel: 1
       fail-fast: false
       matrix:
-        branch: [master, dev]
+        branch: [master]
 
     steps:
       - name: Checkout repository
