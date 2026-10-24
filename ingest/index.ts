@@ -112,7 +112,6 @@ async function fetchPendingFiles(
       size_bytes
     FROM enriched_files
     WHERE ingested_at IS NULL
-      AND (file_extension IS NULL OR file_extension != 'zip')
       AND size_bytes > 0
       ${sizeFilter}
     ORDER BY production_date DESC, size_bytes ASC NULLS LAST, path

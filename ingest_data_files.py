@@ -92,7 +92,7 @@ USE catalogue.sftp;
             size_bytes
         FROM enriched_files
         WHERE ingested_at IS NULL
-          AND (file_extension IS NULL OR file_extension != 'zip') and size_bytes > 0
+          AND size_bytes > 0
         ORDER BY production_date DESC, size_bytes ASC NULLS LAST, path
         LIMIT {limit}
     """
