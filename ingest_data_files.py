@@ -160,17 +160,25 @@ USE catalogue.sftp;
 
                 pipeline_start = time.perf_counter()
                 with open(local_path, "rb") as local_file:
-                    # High compression level. prioritise small file size over compression speed.
-                    compressor = zstd.ZstdCompressor(level=9, threads=-1)
-                    compressed_stream = compressor.stream_reader(local_file)
+                    if file_ext == "zip":
+                        # Zips are already compressed, so upload them as-is.
+                        upload_stream = local_file
+                        content_args = {"ContentType": "application/zip"}
+                    else:
+                        # High compression level. prioritise small file size over compression speed.
+                        compressor = zstd.ZstdCompressor(level=9, threads=-1)
+                        upload_stream = compressor.stream_reader(local_file)
+                        content_args = {
+                            "ContentEncoding": "zstd",
+                            "ContentType": "text/plain",
+                        }
 
                     s3.upload_fileobj(
-                        compressed_stream,
+                        upload_stream,
                         bucket,
                         s3_key,
                         ExtraArgs={
-                            "ContentEncoding": "zstd",
-                            "ContentType": "text/plain",
+                            **content_args,
                             "ContentDisposition": "attachment",
                             "Metadata": {
                                 "original-sftp-path": path or "",
