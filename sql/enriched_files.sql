@@ -7,6 +7,7 @@ with base as (
     regexp_match(path, '/(\d{4})/(\d{2})/(\d{2})/([^/]+)$') as m_date,
     regexp_match(path, '[^/]+$') as m_fname
   from files
+  where path not like '/free/bulkimage/%'
 )
 select
   b.path,

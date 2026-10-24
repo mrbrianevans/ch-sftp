@@ -58,7 +58,7 @@ def _export_all_files(conn, s3, bucket):
                     size_bytes,
                     strftime(last_modified, '%xT%X') AS last_modified,
                     ingested_at IS NOT NULL AS is_ingested
-                FROM files
+                FROM enriched_files
                 ORDER BY path
             ) TO '{sql_path}'
             (FORMAT JSON, ARRAY TRUE)
