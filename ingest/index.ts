@@ -112,7 +112,6 @@ async function fetchPendingFiles(
       size_bytes
     FROM enriched_files
     WHERE ingested_at IS NULL
-      AND (file_extension IS NULL OR file_extension != 'zip')
       AND size_bytes > 0
       ${sizeFilter}
     ORDER BY production_date DESC, size_bytes ASC NULLS LAST, path
@@ -191,24 +190,32 @@ async function compressAndUpload(
   downloadPath: string,
 ): Promise<void> {
   const s3Key = getS3Key(file.path);
-  const compressedPath = join(join(downloadPath, ".."), "compressed.zst");
+  // Zips are already compressed, so upload them as-is.
+  const isZip = file.fileExtension === "zip";
+  const compressedPath = isZip
+    ? downloadPath
+    : join(join(downloadPath, ".."), "compressed.zst");
 
-  const pipelineStart = performance.now();
-  await pipeline(
-    createReadStream(downloadPath),
-    createZstdCompressor(),
-    createWriteStream(compressedPath),
-  );
-  const pipelineElapsed = (performance.now() - pipelineStart) / 1000;
-  console.log(
-    `    ✓ compressed to disk (took ${pipelineElapsed.toFixed(2)}s, ${mbPerSec(file.sizeBytes, pipelineElapsed).toFixed(2)} MB/s)`,
-  );
+  let pipelineElapsed = 0;
+  if (!isZip) {
+    const pipelineStart = performance.now();
+    await pipeline(
+      createReadStream(downloadPath),
+      createZstdCompressor(),
+      createWriteStream(compressedPath),
+    );
+    pipelineElapsed = (performance.now() - pipelineStart) / 1000;
+    console.log(
+      `    ✓ compressed to disk (took ${pipelineElapsed.toFixed(2)}s, ${mbPerSec(file.sizeBytes, pipelineElapsed).toFixed(2)} MB/s)`,
+    );
+  }
 
   const uploadParams = {
     Bucket: bucket,
     Key: s3Key,
-    ContentEncoding: "zstd",
-    ContentType: "text/plain",
+    ...(isZip
+      ? { ContentType: "application/zip" }
+      : { ContentEncoding: "zstd", ContentType: "text/plain" }),
     ContentDisposition: "attachment",
     Metadata: {
       "original-sftp-path": file.path,

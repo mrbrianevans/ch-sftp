@@ -8,6 +8,9 @@ on:
 jobs:
   crawl:
     runs-on: ubuntu-latest
+    concurrency:
+      group: sftp-crawl
+      cancel-in-progress: false
 
     strategy:
       max-parallel: 1

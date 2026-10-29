@@ -35,11 +35,11 @@ USE catalogue.sftp;
     def get_latest_date_from_db():
         # pick up from latest crawled directories
         try:
-            rows = conn.execute("""SELECT 
-                                     substring(path, position('prod' IN path), position('/20' IN path) - position('prod' IN path)) AS product,
-                                     MAX(substring(path, 1, position('/20' IN path) + 10)) AS latest
+            rows = conn.execute(r"""SELECT
+                                     regexp_extract(path, '^/free/([^/]+)/\d{4}/', 1) AS product,
+                                     MAX(regexp_extract(path, '^/free/[^/]+/\d{4}/\d{2}/\d{2}')) AS latest
                               FROM files
-                              WHERE path LIKE '/free/prod%/20%/%/%/%'
+                              WHERE regexp_matches(path, '^/free/[^/]+/\d{4}/\d{2}/\d{2}/')
                               GROUP BY 1;""").fetchall()
             return {row[0]: row[1] for row in rows}
         except Exception:
@@ -70,12 +70,10 @@ USE catalogue.sftp;
     def recurse(dir_path, depth):
         print(f"[{depth} depth] Listing {dir_path}")
         for entry in sftp.listdir_attr(dir_path):
-            if entry.filename == "bulkimage":
-                continue  # skip huge directory. these are images, not structured data.
             full_path = dir_path + "/" + entry.filename
             if entry.longname.startswith("d"):  # Directory
-                if full_path.startswith("/free/prod"):
-                    match = re.match(r"^/free/(prod[A-Z0-9]+)/\d{4}", full_path)
+                if full_path.startswith("/free/"):
+                    match = re.match(r"^/free/([^/]+)/\d{4}", full_path)
                     prod_code = match.group(1) if match else None
                     latest = latest_crawled_dates.get(prod_code, "")
                     if prod_code and latest and full_path < latest[0 : len(full_path)]:
